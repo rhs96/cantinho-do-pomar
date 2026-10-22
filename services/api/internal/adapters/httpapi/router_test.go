@@ -1,7 +1,9 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -9,8 +11,19 @@ import (
 	"testing"
 )
 
+type fakePinger struct{ err error }
+
+func (f fakePinger) Ping(context.Context) error { return f.err }
+
+func newTestRouter(db Pinger) http.Handler {
+	return NewRouter(Deps{
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		DB:     db,
+	})
+}
+
 func TestHealthz(t *testing.T) {
-	h := NewRouter(Deps{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	h := newTestRouter(fakePinger{})
 
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
@@ -25,5 +38,29 @@ func TestHealthz(t *testing.T) {
 	}
 	if body["status"] != "ok" {
 		t.Errorf("status field = %q, want ok", body["status"])
+	}
+}
+
+func TestReadyz(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want int
+	}{
+		{"database up", nil, http.StatusOK},
+		{"database down", errors.New("connection refused"), http.StatusServiceUnavailable},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newTestRouter(fakePinger{err: tt.err})
+
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+
+			if rec.Code != tt.want {
+				t.Errorf("status = %d, want %d", rec.Code, tt.want)
+			}
+		})
 	}
 }

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -10,6 +11,7 @@ import (
 
 type Config struct {
 	HTTPAddr        string
+	DatabaseURL     string
 	LogLevel        slog.Level
 	ShutdownTimeout time.Duration
 }
@@ -17,7 +19,12 @@ type Config struct {
 func Load() (Config, error) {
 	cfg := Config{
 		HTTPAddr:        getEnv("API_HTTP_ADDR", ":8080"),
+		DatabaseURL:     os.Getenv("DATABASE_URL"),
 		ShutdownTimeout: 10 * time.Second,
+	}
+
+	if cfg.DatabaseURL == "" {
+		return Config{}, errors.New("DATABASE_URL is required")
 	}
 
 	level, err := parseLevel(getEnv("API_LOG_LEVEL", "info"))

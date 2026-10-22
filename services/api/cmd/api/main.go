@@ -13,6 +13,7 @@ import (
 
 	"github.com/rhs96/cantinho-do-pomar/services/api/internal/adapters/httpapi"
 	"github.com/rhs96/cantinho-do-pomar/services/api/internal/config"
+	"github.com/rhs96/cantinho-do-pomar/services/api/internal/platform/postgres"
 )
 
 func main() {
@@ -33,9 +34,15 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	db, err := postgres.Connect(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.NewRouter(httpapi.Deps{Logger: logger}),
+		Handler:           httpapi.NewRouter(httpapi.Deps{Logger: logger, DB: db}),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

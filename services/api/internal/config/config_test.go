@@ -7,6 +7,7 @@ import (
 )
 
 func TestLoadDefaults(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/test")
 	t.Setenv("API_HTTP_ADDR", "")
 	t.Setenv("API_LOG_LEVEL", "")
 
@@ -26,6 +27,7 @@ func TestLoadDefaults(t *testing.T) {
 }
 
 func TestLoadOverrides(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/test")
 	t.Setenv("API_HTTP_ADDR", ":9000")
 	t.Setenv("API_LOG_LEVEL", "debug")
 	t.Setenv("API_SHUTDOWN_TIMEOUT", "3s")
@@ -45,7 +47,16 @@ func TestLoadOverrides(t *testing.T) {
 	}
 }
 
+func TestLoadRequiresDatabaseURL(t *testing.T) {
+	t.Setenv("DATABASE_URL", "")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("expected error when DATABASE_URL is empty")
+	}
+}
+
 func TestLoadInvalidLevel(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/test")
 	t.Setenv("API_LOG_LEVEL", "loud")
 
 	if _, err := Load(); err == nil {
