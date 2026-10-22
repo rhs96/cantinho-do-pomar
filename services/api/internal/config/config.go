@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -12,6 +13,7 @@ import (
 type Config struct {
 	HTTPAddr        string
 	DatabaseURL     string
+	MigrateOnStart  bool
 	LogLevel        slog.Level
 	ShutdownTimeout time.Duration
 }
@@ -32,6 +34,14 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	cfg.LogLevel = level
+
+	if raw, ok := os.LookupEnv("API_MIGRATE_ON_START"); ok && raw != "" {
+		v, err := strconv.ParseBool(raw)
+		if err != nil {
+			return Config{}, fmt.Errorf("API_MIGRATE_ON_START: %w", err)
+		}
+		cfg.MigrateOnStart = v
+	}
 
 	if raw, ok := os.LookupEnv("API_SHUTDOWN_TIMEOUT"); ok {
 		d, err := time.ParseDuration(raw)

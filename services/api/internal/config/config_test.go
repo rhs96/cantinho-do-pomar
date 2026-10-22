@@ -24,6 +24,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.ShutdownTimeout != 10*time.Second {
 		t.Errorf("ShutdownTimeout = %v, want 10s", cfg.ShutdownTimeout)
 	}
+	if cfg.MigrateOnStart {
+		t.Error("MigrateOnStart should default to false")
+	}
 }
 
 func TestLoadOverrides(t *testing.T) {
@@ -31,6 +34,7 @@ func TestLoadOverrides(t *testing.T) {
 	t.Setenv("API_HTTP_ADDR", ":9000")
 	t.Setenv("API_LOG_LEVEL", "debug")
 	t.Setenv("API_SHUTDOWN_TIMEOUT", "3s")
+	t.Setenv("API_MIGRATE_ON_START", "true")
 
 	cfg, err := Load()
 	if err != nil {
@@ -44,6 +48,9 @@ func TestLoadOverrides(t *testing.T) {
 	}
 	if cfg.ShutdownTimeout != 3*time.Second {
 		t.Errorf("ShutdownTimeout = %v, want 3s", cfg.ShutdownTimeout)
+	}
+	if !cfg.MigrateOnStart {
+		t.Error("MigrateOnStart = false, want true")
 	}
 }
 
@@ -61,5 +68,14 @@ func TestLoadInvalidLevel(t *testing.T) {
 
 	if _, err := Load(); err == nil {
 		t.Fatal("expected error for invalid log level")
+	}
+}
+
+func TestLoadInvalidMigrateOnStart(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/test")
+	t.Setenv("API_MIGRATE_ON_START", "sometimes")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("expected error for invalid API_MIGRATE_ON_START")
 	}
 }
