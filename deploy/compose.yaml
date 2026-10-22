@@ -23,6 +23,7 @@ services:
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-pomar}:${POSTGRES_PASSWORD:-pomar}@db:5432/${POSTGRES_DB:-pomar}?sslmode=disable
       API_LOG_LEVEL: ${API_LOG_LEVEL:-debug}
+      API_MIGRATE_ON_START: "true"
     ports:
       - "${API_PORT:-8080}:8080"
     depends_on:
