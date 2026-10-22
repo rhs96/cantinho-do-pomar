@@ -1,0 +1,33 @@
+name: cantinho-do-pomar
+
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pomar}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pomar}
+      POSTGRES_DB: ${POSTGRES_DB:-pomar}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - db-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ../services/api
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-pomar}:${POSTGRES_PASSWORD:-pomar}@db:5432/${POSTGRES_DB:-pomar}?sslmode=disable
+      API_LOG_LEVEL: ${API_LOG_LEVEL:-debug}
+    ports:
+      - "${API_PORT:-8080}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db-data:
