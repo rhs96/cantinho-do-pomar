@@ -1,0 +1,23 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: #7cc142;
+  color: #3b2a1a;
+  font-family: var(--font-nunito), system-ui, sans-serif;
+  overscroll-behavior: none;
+}
+
+main {
+  position: fixed;
+  inset: 0;
+}

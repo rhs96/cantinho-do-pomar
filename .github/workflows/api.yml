@@ -51,5 +51,5 @@ jobs:
         with:
           context: services/api
           push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max

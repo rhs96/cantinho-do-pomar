@@ -29,5 +29,13 @@ services:
       db:
         condition: service_healthy
 
+  web:
+    build:
+      context: ../apps/web
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    depends_on:
+      - api
+
 volumes:
   db-data:

@@ -19,3 +19,14 @@ api-test:
 
 api-lint:
 	cd services/api && golangci-lint run
+
+.PHONY: web-dev web-test web-lint
+
+web-dev:
+	cd apps/web && npm run dev
+
+web-test:
+	cd apps/web && npm test
+
+web-lint:
+	cd apps/web && npm run lint && npm run typecheck
