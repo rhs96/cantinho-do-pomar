@@ -1,0 +1,30 @@
+name: Bug
+description: Algo não funciona como deveria
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: O que aconteceu?
+      description: Descreva o problema e o que você esperava que acontecesse.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Como reproduzir
+      placeholder: |
+        1. Abra a fazenda
+        2. Clique em um canteiro vazio com a semente de tomate
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Navegador e sistema
+      placeholder: Chrome 140 no Android 15
+  - type: textarea
+    id: extra
+    attributes:
+      label: Logs, prints ou vídeos
