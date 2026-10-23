@@ -6,6 +6,7 @@ import (
 	"context"
 
 	"github.com/rhs96/cantinho-do-pomar/services/api/internal/domain/farm"
+	"github.com/rhs96/cantinho-do-pomar/services/api/internal/domain/inventory"
 	"github.com/rhs96/cantinho-do-pomar/services/api/internal/domain/player"
 )
 
@@ -15,6 +16,8 @@ type Players interface {
 	// of work that changes a player's state takes this lock first, which
 	// keeps the lock order fixed and serializes actions of the same player.
 	GetForUpdate(ctx context.Context, id player.ID) (player.Player, error)
+	// Update saves coins and xp.
+	Update(ctx context.Context, p player.Player) error
 }
 
 type Farms interface {
@@ -26,9 +29,17 @@ type Farms interface {
 	UpdatePlot(ctx context.Context, owner player.ID, pos farm.Position, fn func(*farm.Plot) error) (*farm.Plot, error)
 }
 
+type Inventory interface {
+	List(ctx context.Context, owner player.ID) ([]inventory.Stack, error)
+	Add(ctx context.Context, owner player.ID, item inventory.Item, qty int) error
+	// Remove fails with inventory.ErrNotEnough without changing anything.
+	Remove(ctx context.Context, owner player.ID, item inventory.Item, qty int) error
+}
+
 type Repos interface {
 	Players() Players
 	Farms() Farms
+	Inventory() Inventory
 }
 
 type UnitOfWork interface {

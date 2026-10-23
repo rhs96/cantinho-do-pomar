@@ -40,5 +40,6 @@ type repos struct {
 	crops farm.CropLookup
 }
 
-func (r repos) Players() app.Players { return NewPlayers(r.db) }
-func (r repos) Farms() app.Farms     { return NewFarms(r.db, r.crops) }
+func (r repos) Players() app.Players     { return NewPlayers(r.db) }
+func (r repos) Farms() app.Farms         { return NewFarms(r.db, r.crops) }
+func (r repos) Inventory() app.Inventory { return NewInventory(r.db) }

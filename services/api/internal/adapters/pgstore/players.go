@@ -47,3 +47,19 @@ func (r *Players) get(ctx context.Context, id player.ID, lock string) (player.Pl
 	}
 	return p, err
 }
+
+func (r *Players) Update(ctx context.Context, p player.Player) error {
+	tag, err := r.db.Exec(ctx, `
+		UPDATE players
+		SET coins = $2, xp = $3, updated_at = now()
+		WHERE id = $1`,
+		p.ID, p.Coins, p.XP,
+	)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return player.ErrNotFound
+	}
+	return nil
+}
