@@ -7,18 +7,17 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/rhs96/cantinho-do-pomar/services/api/internal/domain/farm"
 	"github.com/rhs96/cantinho-do-pomar/services/api/internal/domain/player"
 )
 
 type Farms struct {
-	db    *pgxpool.Pool
+	db    DBTX
 	crops farm.CropLookup
 }
 
-func NewFarms(db *pgxpool.Pool, crops farm.CropLookup) *Farms {
+func NewFarms(db DBTX, crops farm.CropLookup) *Farms {
 	return &Farms{db: db, crops: crops}
 }
 

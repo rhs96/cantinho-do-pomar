@@ -5,16 +5,15 @@ import (
 	"errors"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/rhs96/cantinho-do-pomar/services/api/internal/app/auth"
 )
 
 type Sessions struct {
-	db *pgxpool.Pool
+	db DBTX
 }
 
-func NewSessions(db *pgxpool.Pool) *Sessions {
+func NewSessions(db DBTX) *Sessions {
 	return &Sessions{db: db}
 }
 

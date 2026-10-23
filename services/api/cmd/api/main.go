@@ -52,7 +52,7 @@ func run() error {
 
 	crops := catalog.Default()
 	authSvc := auth.NewService(pgstore.NewPlayers(db), pgstore.NewSessions(db), time.Now, cfg.SessionTTL)
-	farmingSvc := farming.NewService(pgstore.NewFarms(db, crops), crops, time.Now)
+	farmingSvc := farming.NewService(pgstore.NewStore(db, crops), crops, time.Now)
 
 	router := httpapi.NewRouter(httpapi.Deps{
 		Logger:  logger,
