@@ -10,16 +10,17 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/rhs96/cantinho-do-pomar/services/api/internal/app/farming"
 	"github.com/rhs96/cantinho-do-pomar/services/api/internal/domain/farm"
 	"github.com/rhs96/cantinho-do-pomar/services/api/internal/domain/player"
 )
 
 type Farming interface {
 	Farm(ctx context.Context, owner player.ID) (*farm.Farm, error)
-	Plow(ctx context.Context, owner player.ID, pos farm.Position) (*farm.Plot, error)
-	Plant(ctx context.Context, owner player.ID, pos farm.Position, crop farm.CropID) (*farm.Plot, error)
-	Water(ctx context.Context, owner player.ID, pos farm.Position) (*farm.Plot, error)
-	Harvest(ctx context.Context, owner player.ID, pos farm.Position) (*farm.Plot, farm.Harvest, error)
+	Plow(ctx context.Context, owner player.ID, pos farm.Position) (farming.Outcome, error)
+	Plant(ctx context.Context, owner player.ID, pos farm.Position, crop farm.CropID) (farming.Outcome, error)
+	Water(ctx context.Context, owner player.ID, pos farm.Position) (farming.Outcome, error)
+	Harvest(ctx context.Context, owner player.ID, pos farm.Position) (farming.Outcome, error)
 }
 
 type farmHandlers struct {
@@ -31,14 +32,16 @@ type farmHandlers struct {
 func (h *farmHandlers) routes(r chi.Router) {
 	r.Get("/farm", h.getFarm)
 	r.Route("/farm/plots/{col}/{row}", func(r chi.Router) {
-		r.Post("/plow", h.plotAction(func(ctx context.Context, owner player.ID, pos farm.Position, _ *http.Request) (*farm.Plot, error) {
+		r.Post("/plow", h.plotAction(func(ctx context.Context, owner player.ID, pos farm.Position, _ *http.Request) (farming.Outcome, error) {
 			return h.farming.Plow(ctx, owner, pos)
 		}))
-		r.Post("/water", h.plotAction(func(ctx context.Context, owner player.ID, pos farm.Position, _ *http.Request) (*farm.Plot, error) {
+		r.Post("/water", h.plotAction(func(ctx context.Context, owner player.ID, pos farm.Position, _ *http.Request) (farming.Outcome, error) {
 			return h.farming.Water(ctx, owner, pos)
 		}))
+		r.Post("/harvest", h.plotAction(func(ctx context.Context, owner player.ID, pos farm.Position, _ *http.Request) (farming.Outcome, error) {
+			return h.farming.Harvest(ctx, owner, pos)
+		}))
 		r.Post("/plant", h.plotAction(h.plant))
-		r.Post("/harvest", h.harvest)
 	})
 }
 
@@ -93,7 +96,12 @@ func (h *farmHandlers) getFarm(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-type plotFunc func(ctx context.Context, owner player.ID, pos farm.Position, r *http.Request) (*farm.Plot, error)
+type plotFunc func(ctx context.Context, owner player.ID, pos farm.Position, r *http.Request) (farming.Outcome, error)
+
+type harvestResponse struct {
+	Crop     farm.CropID `json:"crop"`
+	Quantity int         `json:"quantity"`
+}
 
 func (h *farmHandlers) plotAction(fn plotFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -101,39 +109,32 @@ func (h *farmHandlers) plotAction(fn plotFunc) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		p, err := fn(r.Context(), currentPlayer(r.Context()).ID, pos, r)
+		out, err := fn(r.Context(), currentPlayer(r.Context()).ID, pos, r)
 		if err != nil {
 			writeAppError(w, r, h.logger, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"plot": toPlotResponse(p, h.now())})
+
+		res := map[string]any{
+			"plot":      toPlotResponse(out.Plot, h.now()),
+			"player":    toPlayerResponse(out.Player),
+			"leveledUp": out.LeveledUp,
+		}
+		if out.Harvest.Quantity > 0 {
+			res["harvest"] = harvestResponse{Crop: out.Harvest.Crop, Quantity: out.Harvest.Quantity}
+		}
+		writeJSON(w, http.StatusOK, res)
 	}
 }
 
-func (h *farmHandlers) plant(ctx context.Context, owner player.ID, pos farm.Position, r *http.Request) (*farm.Plot, error) {
+func (h *farmHandlers) plant(ctx context.Context, owner player.ID, pos farm.Position, r *http.Request) (farming.Outcome, error) {
 	var body struct {
 		Crop string `json:"crop"`
 	}
 	if err := decodeJSON(r, &body); err != nil || body.Crop == "" {
-		return nil, errInvalidBody
+		return farming.Outcome{}, errInvalidBody
 	}
 	return h.farming.Plant(ctx, owner, pos, farm.CropID(body.Crop))
-}
-
-func (h *farmHandlers) harvest(w http.ResponseWriter, r *http.Request) {
-	pos, ok := parsePosition(w, r)
-	if !ok {
-		return
-	}
-	p, got, err := h.farming.Harvest(r.Context(), currentPlayer(r.Context()).ID, pos)
-	if err != nil {
-		writeAppError(w, r, h.logger, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"plot":    toPlotResponse(p, h.now()),
-		"harvest": map[string]any{"crop": got.Crop, "quantity": got.Quantity},
-	})
 }
 
 func parsePosition(w http.ResponseWriter, r *http.Request) (farm.Position, bool) {
