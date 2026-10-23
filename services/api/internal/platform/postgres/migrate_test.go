@@ -17,7 +17,7 @@ func TestMigrateUpDownUp(t *testing.T) {
 	if err := postgres.Migrate(ctx, pool, logger); err != nil {
 		t.Fatalf("Migrate() = %v", err)
 	}
-	for _, table := range []string{"players", "farms", "plots"} {
+	for _, table := range []string{"players", "farms", "plots", "sessions"} {
 		var exists bool
 		err := pool.QueryRow(ctx, "SELECT to_regclass($1) IS NOT NULL", table).Scan(&exists)
 		if err != nil || !exists {
