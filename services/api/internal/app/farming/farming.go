@@ -6,51 +6,52 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/rhs96/cantinho-do-pomar/services/api/internal/app"
 	"github.com/rhs96/cantinho-do-pomar/services/api/internal/domain/farm"
+	"github.com/rhs96/cantinho-do-pomar/services/api/internal/domain/inventory"
 	"github.com/rhs96/cantinho-do-pomar/services/api/internal/domain/player"
 )
 
-var ErrUnknownCrop = errors.New("unknown crop")
-
-type Farms interface {
-	// Get returns farm.ErrNotFound when the player has no farm yet.
-	Get(ctx context.Context, owner player.ID) (*farm.Farm, error)
-	// Create returns the existing farm if the owner already has one.
-	Create(ctx context.Context, f *farm.Farm) (*farm.Farm, error)
-	// UpdatePlot runs fn on the plot atomically. If fn fails nothing is saved.
-	UpdatePlot(ctx context.Context, owner player.ID, pos farm.Position, fn func(*farm.Plot) error) (*farm.Plot, error)
-}
+var (
+	ErrUnknownCrop = errors.New("unknown crop")
+	ErrNoSeeds     = errors.New("no seeds of this crop in the barn")
+)
 
 type Service struct {
-	farms Farms
+	uow   app.UnitOfWork
 	crops farm.CropLookup
 	now   func() time.Time
 }
 
-func NewService(farms Farms, crops farm.CropLookup, now func() time.Time) *Service {
-	return &Service{farms: farms, crops: crops, now: now}
+func NewService(uow app.UnitOfWork, crops farm.CropLookup, now func() time.Time) *Service {
+	return &Service{uow: uow, crops: crops, now: now}
 }
 
 // Farm returns the player's farm, creating the starter one on first access.
 func (s *Service) Farm(ctx context.Context, owner player.ID) (*farm.Farm, error) {
-	f, err := s.farms.Get(ctx, owner)
-	if !errors.Is(err, farm.ErrNotFound) {
-		return f, err
-	}
+	var f *farm.Farm
+	err := s.uow.Do(ctx, func(r app.Repos) error {
+		var err error
+		f, err = r.Farms().Get(ctx, owner)
+		if !errors.Is(err, farm.ErrNotFound) {
+			return err
+		}
 
-	f, err = farm.New(owner, farm.StarterSize, farm.StarterSize)
-	if err != nil {
-		return nil, err
-	}
-	f, err = s.farms.Create(ctx, f)
-	if err != nil {
-		return nil, fmt.Errorf("create starter farm: %w", err)
-	}
-	return f, nil
+		f, err = farm.New(owner, farm.StarterSize, farm.StarterSize)
+		if err != nil {
+			return err
+		}
+		f, err = r.Farms().Create(ctx, f)
+		if err != nil {
+			return fmt.Errorf("create starter farm: %w", err)
+		}
+		return nil
+	})
+	return f, err
 }
 
 func (s *Service) Plow(ctx context.Context, owner player.ID, pos farm.Position) (*farm.Plot, error) {
-	return s.farms.UpdatePlot(ctx, owner, pos, func(p *farm.Plot) error {
+	return s.updatePlot(ctx, owner, pos, func(_ app.Repos, p *farm.Plot) error {
 		return p.Plow()
 	})
 }
@@ -61,26 +62,52 @@ func (s *Service) Plant(ctx context.Context, owner player.ID, pos farm.Position,
 		return nil, ErrUnknownCrop
 	}
 
-	return s.farms.UpdatePlot(ctx, owner, pos, func(p *farm.Plot) error {
-		return p.Plant(crop, s.now())
+	return s.updatePlot(ctx, owner, pos, func(r app.Repos, p *farm.Plot) error {
+		if err := p.Plant(crop, s.now()); err != nil {
+			return err
+		}
+		err := r.Inventory().Remove(ctx, owner, inventory.Seed(cropID), 1)
+		if errors.Is(err, inventory.ErrNotEnough) {
+			return ErrNoSeeds
+		}
+		return err
 	})
 }
 
 func (s *Service) Water(ctx context.Context, owner player.ID, pos farm.Position) (*farm.Plot, error) {
-	return s.farms.UpdatePlot(ctx, owner, pos, func(p *farm.Plot) error {
+	return s.updatePlot(ctx, owner, pos, func(_ app.Repos, p *farm.Plot) error {
 		return p.Water(s.now())
 	})
 }
 
 func (s *Service) Harvest(ctx context.Context, owner player.ID, pos farm.Position) (*farm.Plot, farm.Harvest, error) {
 	var h farm.Harvest
-	p, err := s.farms.UpdatePlot(ctx, owner, pos, func(p *farm.Plot) error {
+	p, err := s.updatePlot(ctx, owner, pos, func(r app.Repos, p *farm.Plot) error {
 		var err error
-		h, err = p.Harvest(s.now())
-		return err
+		if h, err = p.Harvest(s.now()); err != nil {
+			return err
+		}
+		return r.Inventory().Add(ctx, owner, inventory.Produce(h.Crop), h.Quantity)
 	})
 	if err != nil {
 		return nil, farm.Harvest{}, err
 	}
 	return p, h, nil
+}
+
+// updatePlot locks the player, then the plot, and runs fn on it.
+func (s *Service) updatePlot(ctx context.Context, owner player.ID, pos farm.Position, fn func(app.Repos, *farm.Plot) error) (*farm.Plot, error) {
+	var plot *farm.Plot
+	err := s.uow.Do(ctx, func(r app.Repos) error {
+		if _, err := r.Players().GetForUpdate(ctx, owner); err != nil {
+			return err
+		}
+
+		var err error
+		plot, err = r.Farms().UpdatePlot(ctx, owner, pos, func(p *farm.Plot) error {
+			return fn(r, p)
+		})
+		return err
+	})
+	return plot, err
 }

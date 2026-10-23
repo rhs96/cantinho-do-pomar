@@ -2,8 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"log/slog"
 	"math"
 	"net/http"
@@ -12,7 +10,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/rhs96/cantinho-do-pomar/services/api/internal/app/farming"
 	"github.com/rhs96/cantinho-do-pomar/services/api/internal/domain/farm"
 	"github.com/rhs96/cantinho-do-pomar/services/api/internal/domain/player"
 )
@@ -77,7 +74,7 @@ func toPlotResponse(p *farm.Plot, now time.Time) plotResponse {
 func (h *farmHandlers) getFarm(w http.ResponseWriter, r *http.Request) {
 	f, err := h.farming.Farm(r.Context(), currentPlayer(r.Context()).ID)
 	if err != nil {
-		h.writeFarmError(w, r, err)
+		writeAppError(w, r, h.logger, err)
 		return
 	}
 
@@ -106,20 +103,18 @@ func (h *farmHandlers) plotAction(fn plotFunc) http.HandlerFunc {
 		}
 		p, err := fn(r.Context(), currentPlayer(r.Context()).ID, pos, r)
 		if err != nil {
-			h.writeFarmError(w, r, err)
+			writeAppError(w, r, h.logger, err)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"plot": toPlotResponse(p, h.now())})
 	}
 }
 
-var errInvalidBody = errors.New("invalid request body")
-
 func (h *farmHandlers) plant(ctx context.Context, owner player.ID, pos farm.Position, r *http.Request) (*farm.Plot, error) {
 	var body struct {
 		Crop string `json:"crop"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(nil, r.Body, 1<<10)).Decode(&body); err != nil || body.Crop == "" {
+	if err := decodeJSON(r, &body); err != nil || body.Crop == "" {
 		return nil, errInvalidBody
 	}
 	return h.farming.Plant(ctx, owner, pos, farm.CropID(body.Crop))
@@ -132,7 +127,7 @@ func (h *farmHandlers) harvest(w http.ResponseWriter, r *http.Request) {
 	}
 	p, got, err := h.farming.Harvest(r.Context(), currentPlayer(r.Context()).ID, pos)
 	if err != nil {
-		h.writeFarmError(w, r, err)
+		writeAppError(w, r, h.logger, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -149,33 +144,4 @@ func parsePosition(w http.ResponseWriter, r *http.Request) (farm.Position, bool)
 		return farm.Position{}, false
 	}
 	return farm.Position{Col: col, Row: row}, true
-}
-
-var farmErrors = []struct {
-	err     error
-	status  int
-	code    string
-	message string
-}{
-	{errInvalidBody, http.StatusBadRequest, "invalid_body", "expected a JSON body like {\"crop\": \"tomato\"}"},
-	{farm.ErrNotFound, http.StatusNotFound, "farm_not_found", "open the farm before acting on it"},
-	{farm.ErrOutOfBounds, http.StatusNotFound, "plot_not_found", "no plot at this position"},
-	{farming.ErrUnknownCrop, http.StatusUnprocessableEntity, "unknown_crop", "this crop does not exist"},
-	{farm.ErrAlreadyPlowed, http.StatusConflict, "already_plowed", "the plot is already plowed"},
-	{farm.ErrPlotOccupied, http.StatusConflict, "plot_occupied", "something is already growing here"},
-	{farm.ErrNotPlowed, http.StatusConflict, "not_plowed", "plow the plot first"},
-	{farm.ErrNothingPlanted, http.StatusConflict, "nothing_planted", "nothing is planted here"},
-	{farm.ErrNotRipe, http.StatusConflict, "not_ripe", "the crop is not ripe yet"},
-	{farm.ErrAlreadyRipe, http.StatusConflict, "already_ripe", "the crop is ripe, harvest it"},
-	{farm.ErrAlreadyWet, http.StatusConflict, "already_wet", "the soil is still wet"},
-}
-
-func (h *farmHandlers) writeFarmError(w http.ResponseWriter, r *http.Request, err error) {
-	for _, e := range farmErrors {
-		if errors.Is(err, e.err) {
-			writeError(w, e.status, e.code, e.message)
-			return
-		}
-	}
-	internalError(w, r, h.logger, err)
 }
