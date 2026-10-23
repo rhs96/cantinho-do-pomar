@@ -15,8 +15,10 @@ type Pinger interface {
 }
 
 type Deps struct {
-	Logger *slog.Logger
-	DB     Pinger
+	Logger  *slog.Logger
+	DB      Pinger
+	Auth    Authenticator
+	Session SessionConfig
 }
 
 func NewRouter(d Deps) http.Handler {
@@ -28,6 +30,17 @@ func NewRouter(d Deps) http.Handler {
 
 	r.Get("/healthz", healthz)
 	r.Get("/readyz", readyz(d.DB))
+
+	sessions := &sessionHandlers{auth: d.Auth, cfg: d.Session, logger: d.Logger}
+
+	r.Route("/v1", func(r chi.Router) {
+		r.Post("/sessions/guest", sessions.startGuest)
+
+		r.Group(func(r chi.Router) {
+			r.Use(requireSession(d.Auth, d.Logger))
+			r.Get("/me", sessions.me)
+		})
+	})
 
 	return r
 }

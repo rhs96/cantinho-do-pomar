@@ -38,3 +38,16 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logger) error
 	}
 	return nil
 }
+
+func MigrateDownTo(ctx context.Context, pool *pgxpool.Pool, version int64) error {
+	p, closeDB, err := newMigrator(pool)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = closeDB() }()
+
+	if _, err := p.DownTo(ctx, version); err != nil {
+		return fmt.Errorf("roll back migrations: %w", err)
+	}
+	return nil
+}
