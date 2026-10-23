@@ -71,20 +71,26 @@ func TestFullCycle(t *testing.T) {
 		t.Fatalf("Water() = %v", err)
 	}
 
-	if _, _, err := f.svc.Harvest(ctx, f.owner, pos); !errors.Is(err, farm.ErrNotRipe) {
+	if _, err := f.svc.Harvest(ctx, f.owner, pos); !errors.Is(err, farm.ErrNotRipe) {
 		t.Fatalf("early Harvest() = %v, want ErrNotRipe", err)
 	}
 
 	f.now = f.now.Add(strawberry.TimeToRipe())
-	p, h, err := f.svc.Harvest(ctx, f.owner, pos)
+	out, err := f.svc.Harvest(ctx, f.owner, pos)
 	if err != nil {
 		t.Fatalf("Harvest() = %v", err)
 	}
-	if h.Crop != "strawberry" || h.Quantity != strawberry.Yield {
-		t.Errorf("Harvest() = %+v", h)
+	if out.Harvest.Crop != "strawberry" || out.Harvest.Quantity != strawberry.Yield {
+		t.Errorf("Harvest() = %+v", out.Harvest)
 	}
-	if p.State() != farm.PlotWithered {
-		t.Errorf("state = %v, want withered", p.State())
+	if out.Plot.State() != farm.PlotWithered {
+		t.Errorf("state = %v, want withered", out.Plot.State())
+	}
+
+	entry, _ := catalog.Default().Entry("strawberry")
+	wantXP := PlowXP + PlantXP + WaterXP + entry.HarvestXP
+	if out.Player.XP != wantXP || f.store.Player(f.owner).XP != wantXP {
+		t.Errorf("xp = %d (stored %d), want %d", out.Player.XP, f.store.Player(f.owner).XP, wantXP)
 	}
 
 	if got := f.store.Quantity(f.owner, inventory.Seed("strawberry")); got != 1 {
@@ -163,5 +169,34 @@ func TestActionsPropagateDomainErrors(t *testing.T) {
 	}
 	if _, err := f.svc.Plow(ctx, "stranger", farm.Position{}); !errors.Is(err, player.ErrNotFound) {
 		t.Errorf("Plow() by unknown player = %v, want player.ErrNotFound", err)
+	}
+}
+
+func TestFailedActionGivesNoXP(t *testing.T) {
+	f := newFixture(t)
+
+	if _, err := f.svc.Water(t.Context(), f.owner, farm.Position{}); err == nil {
+		t.Fatal("watering grass should fail")
+	}
+	if xp := f.store.Player(f.owner).XP; xp != 0 {
+		t.Errorf("xp = %d after a failed action, want 0", xp)
+	}
+}
+
+func TestLevelUpIsReported(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	pos := farm.Position{}
+
+	p := f.store.Player(f.owner)
+	p.XP = player.XPForLevel(2) - PlowXP
+	f.store.SetPlayer(p)
+
+	out, err := f.svc.Plow(ctx, f.owner, pos)
+	if err != nil {
+		t.Fatalf("Plow() = %v", err)
+	}
+	if !out.LeveledUp || out.Player.Level() != 2 {
+		t.Errorf("LeveledUp = %v, level = %d", out.LeveledUp, out.Player.Level())
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/rhs96/cantinho-do-pomar/services/api/internal/app"
+	"github.com/rhs96/cantinho-do-pomar/services/api/internal/catalog"
 	"github.com/rhs96/cantinho-do-pomar/services/api/internal/domain/farm"
 	"github.com/rhs96/cantinho-do-pomar/services/api/internal/domain/inventory"
 	"github.com/rhs96/cantinho-do-pomar/services/api/internal/domain/player"
@@ -17,14 +18,29 @@ var (
 	ErrNoSeeds     = errors.New("no seeds of this crop in the barn")
 )
 
-type Service struct {
-	uow   app.UnitOfWork
-	crops farm.CropLookup
-	now   func() time.Time
+// XP for the small chores. Harvest XP depends on the crop.
+const (
+	PlowXP  = 1
+	PlantXP = 1
+	WaterXP = 1
+)
+
+// Outcome is everything an action changed.
+type Outcome struct {
+	Plot      *farm.Plot
+	Player    player.Player
+	Harvest   farm.Harvest
+	LeveledUp bool
 }
 
-func NewService(uow app.UnitOfWork, crops farm.CropLookup, now func() time.Time) *Service {
-	return &Service{uow: uow, crops: crops, now: now}
+type Service struct {
+	uow     app.UnitOfWork
+	catalog *catalog.Catalog
+	now     func() time.Time
+}
+
+func NewService(uow app.UnitOfWork, c *catalog.Catalog, now func() time.Time) *Service {
+	return &Service{uow: uow, catalog: c, now: now}
 }
 
 // Farm returns the player's farm, creating the starter one on first access.
@@ -50,64 +66,79 @@ func (s *Service) Farm(ctx context.Context, owner player.ID) (*farm.Farm, error)
 	return f, err
 }
 
-func (s *Service) Plow(ctx context.Context, owner player.ID, pos farm.Position) (*farm.Plot, error) {
-	return s.updatePlot(ctx, owner, pos, func(_ app.Repos, p *farm.Plot) error {
-		return p.Plow()
+func (s *Service) Plow(ctx context.Context, owner player.ID, pos farm.Position) (Outcome, error) {
+	return s.act(ctx, owner, pos, func(_ app.Repos, p *farm.Plot, _ *Outcome) (int64, error) {
+		return PlowXP, p.Plow()
 	})
 }
 
-func (s *Service) Plant(ctx context.Context, owner player.ID, pos farm.Position, cropID farm.CropID) (*farm.Plot, error) {
-	crop, ok := s.crops.Crop(cropID)
+func (s *Service) Plant(ctx context.Context, owner player.ID, pos farm.Position, cropID farm.CropID) (Outcome, error) {
+	crop, ok := s.catalog.Crop(cropID)
 	if !ok {
-		return nil, ErrUnknownCrop
+		return Outcome{}, ErrUnknownCrop
 	}
 
-	return s.updatePlot(ctx, owner, pos, func(r app.Repos, p *farm.Plot) error {
+	return s.act(ctx, owner, pos, func(r app.Repos, p *farm.Plot, _ *Outcome) (int64, error) {
 		if err := p.Plant(crop, s.now()); err != nil {
-			return err
+			return 0, err
 		}
 		err := r.Inventory().Remove(ctx, owner, inventory.Seed(cropID), 1)
 		if errors.Is(err, inventory.ErrNotEnough) {
-			return ErrNoSeeds
+			return 0, ErrNoSeeds
 		}
-		return err
+		return PlantXP, err
 	})
 }
 
-func (s *Service) Water(ctx context.Context, owner player.ID, pos farm.Position) (*farm.Plot, error) {
-	return s.updatePlot(ctx, owner, pos, func(_ app.Repos, p *farm.Plot) error {
-		return p.Water(s.now())
+func (s *Service) Water(ctx context.Context, owner player.ID, pos farm.Position) (Outcome, error) {
+	return s.act(ctx, owner, pos, func(_ app.Repos, p *farm.Plot, _ *Outcome) (int64, error) {
+		return WaterXP, p.Water(s.now())
 	})
 }
 
-func (s *Service) Harvest(ctx context.Context, owner player.ID, pos farm.Position) (*farm.Plot, farm.Harvest, error) {
-	var h farm.Harvest
-	p, err := s.updatePlot(ctx, owner, pos, func(r app.Repos, p *farm.Plot) error {
-		var err error
-		if h, err = p.Harvest(s.now()); err != nil {
+func (s *Service) Harvest(ctx context.Context, owner player.ID, pos farm.Position) (Outcome, error) {
+	return s.act(ctx, owner, pos, func(r app.Repos, p *farm.Plot, out *Outcome) (int64, error) {
+		h, err := p.Harvest(s.now())
+		if err != nil {
+			return 0, err
+		}
+		out.Harvest = h
+
+		var xp int64
+		if entry, ok := s.catalog.Entry(h.Crop); ok {
+			xp = entry.HarvestXP
+		}
+		return xp, r.Inventory().Add(ctx, owner, inventory.Produce(h.Crop), h.Quantity)
+	})
+}
+
+type action func(r app.Repos, p *farm.Plot, out *Outcome) (xp int64, err error)
+
+// act locks the player, then the plot, runs fn and credits the XP it earned.
+func (s *Service) act(ctx context.Context, owner player.ID, pos farm.Position, fn action) (Outcome, error) {
+	var out Outcome
+	err := s.uow.Do(ctx, func(r app.Repos) error {
+		p, err := r.Players().GetForUpdate(ctx, owner)
+		if err != nil {
 			return err
 		}
-		return r.Inventory().Add(ctx, owner, inventory.Produce(h.Crop), h.Quantity)
+
+		var xp int64
+		out.Plot, err = r.Farms().UpdatePlot(ctx, owner, pos, func(plot *farm.Plot) error {
+			var err error
+			xp, err = fn(r, plot, &out)
+			return err
+		})
+		if err != nil {
+			return err
+		}
+
+		out.LeveledUp = p.GainXP(xp)
+		out.Player = p
+		return r.Players().Update(ctx, p)
 	})
 	if err != nil {
-		return nil, farm.Harvest{}, err
+		return Outcome{}, err
 	}
-	return p, h, nil
-}
-
-// updatePlot locks the player, then the plot, and runs fn on it.
-func (s *Service) updatePlot(ctx context.Context, owner player.ID, pos farm.Position, fn func(app.Repos, *farm.Plot) error) (*farm.Plot, error) {
-	var plot *farm.Plot
-	err := s.uow.Do(ctx, func(r app.Repos) error {
-		if _, err := r.Players().GetForUpdate(ctx, owner); err != nil {
-			return err
-		}
-
-		var err error
-		plot, err = r.Farms().UpdatePlot(ctx, owner, pos, func(p *farm.Plot) error {
-			return fn(r, p)
-		})
-		return err
-	})
-	return plot, err
+	return out, nil
 }

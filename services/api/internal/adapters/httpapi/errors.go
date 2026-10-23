@@ -45,6 +45,7 @@ var appErrors = []struct {
 	{farm.ErrAlreadyWet, http.StatusConflict, "already_wet", "the soil is still wet"},
 	{farming.ErrNoSeeds, http.StatusConflict, "no_seeds", "buy seeds of this crop first"},
 	{player.ErrNotEnoughCoins, http.StatusConflict, "not_enough_coins", "not enough coins"},
+	{shop.ErrCropLocked, http.StatusConflict, "crop_locked", "reach a higher level to buy this seed"},
 	{inventory.ErrNotEnough, http.StatusConflict, "not_enough_items", "not enough items in the barn"},
 }
 

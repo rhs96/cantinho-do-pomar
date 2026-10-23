@@ -35,10 +35,24 @@ type playerResponse struct {
 	DisplayName string    `json:"displayName"`
 	Coins       int64     `json:"coins"`
 	XP          int64     `json:"xp"`
+	Level       int       `json:"level"`
+	// Total XP at which the current level started and the next one starts,
+	// so the client can draw a progress bar.
+	LevelXP     int64 `json:"levelXp"`
+	NextLevelXP int64 `json:"nextLevelXp"`
 }
 
 func toPlayerResponse(p player.Player) playerResponse {
-	return playerResponse{ID: p.ID, DisplayName: p.DisplayName, Coins: p.Coins, XP: p.XP}
+	level := p.Level()
+	return playerResponse{
+		ID:          p.ID,
+		DisplayName: p.DisplayName,
+		Coins:       p.Coins,
+		XP:          p.XP,
+		Level:       level,
+		LevelXP:     player.XPForLevel(level),
+		NextLevelXP: player.XPForLevel(level + 1),
+	}
 }
 
 func (h *sessionHandlers) startGuest(w http.ResponseWriter, r *http.Request) {

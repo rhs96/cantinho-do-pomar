@@ -34,37 +34,35 @@ func (f *fakeFarming) Farm(_ context.Context, owner player.ID) (*farm.Farm, erro
 	return farm.New(owner, 2, 2)
 }
 
-func (f *fakeFarming) plantedPlot(pos farm.Position) (*farm.Plot, error) {
+func (f *fakeFarming) outcome(pos farm.Position) (farming.Outcome, error) {
 	f.lastPos = pos
 	if f.err != nil {
-		return nil, f.err
+		return farming.Outcome{}, f.err
 	}
 	p := farm.NewPlot(pos)
 	_ = p.Plow()
 	_ = p.Plant(strawberry, farmNow)
 	_ = p.Water(farmNow)
-	return p, nil
+	return farming.Outcome{Plot: p, Player: player.Player{ID: "p1", XP: 60}, LeveledUp: true}, nil
 }
 
-func (f *fakeFarming) Plow(_ context.Context, _ player.ID, pos farm.Position) (*farm.Plot, error) {
-	return f.plantedPlot(pos)
+func (f *fakeFarming) Plow(_ context.Context, _ player.ID, pos farm.Position) (farming.Outcome, error) {
+	return f.outcome(pos)
 }
 
-func (f *fakeFarming) Water(_ context.Context, _ player.ID, pos farm.Position) (*farm.Plot, error) {
-	return f.plantedPlot(pos)
+func (f *fakeFarming) Water(_ context.Context, _ player.ID, pos farm.Position) (farming.Outcome, error) {
+	return f.outcome(pos)
 }
 
-func (f *fakeFarming) Plant(_ context.Context, _ player.ID, pos farm.Position, crop farm.CropID) (*farm.Plot, error) {
+func (f *fakeFarming) Plant(_ context.Context, _ player.ID, pos farm.Position, crop farm.CropID) (farming.Outcome, error) {
 	f.lastCrop = crop
-	return f.plantedPlot(pos)
+	return f.outcome(pos)
 }
 
-func (f *fakeFarming) Harvest(_ context.Context, _ player.ID, pos farm.Position) (*farm.Plot, farm.Harvest, error) {
-	p, err := f.plantedPlot(pos)
-	if err != nil {
-		return nil, farm.Harvest{}, err
-	}
-	return p, farm.Harvest{Crop: strawberry.ID, Quantity: strawberry.Yield}, nil
+func (f *fakeFarming) Harvest(_ context.Context, _ player.ID, pos farm.Position) (farming.Outcome, error) {
+	out, err := f.outcome(pos)
+	out.Harvest = farm.Harvest{Crop: strawberry.ID, Quantity: strawberry.Yield}
+	return out, err
 }
 
 func newFarmRouter(f Farming) http.Handler {
@@ -129,10 +127,19 @@ func TestPlotActionResponse(t *testing.T) {
 	}
 
 	var body struct {
-		Plot plotResponse `json:"plot"`
+		Plot      plotResponse   `json:"plot"`
+		Player    playerResponse `json:"player"`
+		LeveledUp bool           `json:"leveledUp"`
+		Harvest   *struct{}      `json:"harvest"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 		t.Fatalf("decode: %v", err)
+	}
+	if body.Player.XP != 60 || !body.LeveledUp {
+		t.Errorf("player = %+v, leveledUp = %v", body.Player, body.LeveledUp)
+	}
+	if body.Harvest != nil {
+		t.Error("harvest should only be present on harvest")
 	}
 	p := body.Plot
 	if p.State != "planted" || p.Crop != "strawberry" || p.Stage != "seed" {

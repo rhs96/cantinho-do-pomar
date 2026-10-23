@@ -74,6 +74,13 @@ func (s *Store) AddPlayer(p player.Player) player.Player {
 	return p
 }
 
+// SetPlayer overwrites a stored player.
+func (s *Store) SetPlayer(p player.Player) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.players[p.ID] = p
+}
+
 func (s *Store) Player(id player.ID) player.Player {
 	s.mu.Lock()
 	defer s.mu.Unlock()
