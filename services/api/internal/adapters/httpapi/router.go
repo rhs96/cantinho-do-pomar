@@ -20,6 +20,7 @@ type Deps struct {
 	Auth    Authenticator
 	Session SessionConfig
 	Farming Farming
+	Shop    Shop
 	Now     func() time.Time
 }
 
@@ -39,6 +40,7 @@ func NewRouter(d Deps) http.Handler {
 
 	sessions := &sessionHandlers{auth: d.Auth, cfg: d.Session, logger: d.Logger}
 	farms := &farmHandlers{farming: d.Farming, now: d.Now, logger: d.Logger}
+	shops := &shopHandlers{shop: d.Shop, logger: d.Logger}
 
 	r.Route("/v1", func(r chi.Router) {
 		r.Post("/sessions/guest", sessions.startGuest)
@@ -47,6 +49,7 @@ func NewRouter(d Deps) http.Handler {
 			r.Use(requireSession(d.Auth, d.Logger))
 			r.Get("/me", sessions.me)
 			farms.routes(r)
+			shops.routes(r)
 		})
 	})
 
