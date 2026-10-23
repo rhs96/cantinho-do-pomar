@@ -47,3 +47,27 @@ func NormalizeName(name string) (string, error) {
 	}
 	return name, nil
 }
+
+var (
+	ErrNotEnoughCoins = errors.New("not enough coins")
+	ErrInvalidAmount  = errors.New("amount must be positive")
+)
+
+func (p *Player) Spend(amount int64) error {
+	if amount <= 0 {
+		return ErrInvalidAmount
+	}
+	if p.Coins < amount {
+		return ErrNotEnoughCoins
+	}
+	p.Coins -= amount
+	return nil
+}
+
+func (p *Player) Earn(amount int64) error {
+	if amount <= 0 {
+		return ErrInvalidAmount
+	}
+	p.Coins += amount
+	return nil
+}

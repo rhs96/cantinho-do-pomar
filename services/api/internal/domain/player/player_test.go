@@ -53,3 +53,26 @@ func TestNormalizeName(t *testing.T) {
 		}
 	}
 }
+
+func TestSpendAndEarn(t *testing.T) {
+	p := Player{Coins: 50}
+
+	if err := p.Spend(30); err != nil || p.Coins != 20 {
+		t.Fatalf("Spend(30) = %v, coins %d", err, p.Coins)
+	}
+	if err := p.Spend(21); !errors.Is(err, ErrNotEnoughCoins) || p.Coins != 20 {
+		t.Errorf("Spend(21) = %v, coins %d; want ErrNotEnoughCoins and unchanged", err, p.Coins)
+	}
+	if err := p.Earn(5); err != nil || p.Coins != 25 {
+		t.Errorf("Earn(5) = %v, coins %d", err, p.Coins)
+	}
+
+	for _, amount := range []int64{0, -1} {
+		if err := p.Spend(amount); !errors.Is(err, ErrInvalidAmount) {
+			t.Errorf("Spend(%d) = %v, want ErrInvalidAmount", amount, err)
+		}
+		if err := p.Earn(amount); !errors.Is(err, ErrInvalidAmount) {
+			t.Errorf("Earn(%d) = %v, want ErrInvalidAmount", amount, err)
+		}
+	}
+}
