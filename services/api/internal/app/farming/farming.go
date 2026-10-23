@@ -8,10 +8,14 @@ import (
 
 	"github.com/rhs96/cantinho-do-pomar/services/api/internal/app"
 	"github.com/rhs96/cantinho-do-pomar/services/api/internal/domain/farm"
+	"github.com/rhs96/cantinho-do-pomar/services/api/internal/domain/inventory"
 	"github.com/rhs96/cantinho-do-pomar/services/api/internal/domain/player"
 )
 
-var ErrUnknownCrop = errors.New("unknown crop")
+var (
+	ErrUnknownCrop = errors.New("unknown crop")
+	ErrNoSeeds     = errors.New("no seeds of this crop in the barn")
+)
 
 type Service struct {
 	uow   app.UnitOfWork
@@ -58,8 +62,15 @@ func (s *Service) Plant(ctx context.Context, owner player.ID, pos farm.Position,
 		return nil, ErrUnknownCrop
 	}
 
-	return s.updatePlot(ctx, owner, pos, func(_ app.Repos, p *farm.Plot) error {
-		return p.Plant(crop, s.now())
+	return s.updatePlot(ctx, owner, pos, func(r app.Repos, p *farm.Plot) error {
+		if err := p.Plant(crop, s.now()); err != nil {
+			return err
+		}
+		err := r.Inventory().Remove(ctx, owner, inventory.Seed(cropID), 1)
+		if errors.Is(err, inventory.ErrNotEnough) {
+			return ErrNoSeeds
+		}
+		return err
 	})
 }
 
@@ -71,10 +82,12 @@ func (s *Service) Water(ctx context.Context, owner player.ID, pos farm.Position)
 
 func (s *Service) Harvest(ctx context.Context, owner player.ID, pos farm.Position) (*farm.Plot, farm.Harvest, error) {
 	var h farm.Harvest
-	p, err := s.updatePlot(ctx, owner, pos, func(_ app.Repos, p *farm.Plot) error {
+	p, err := s.updatePlot(ctx, owner, pos, func(r app.Repos, p *farm.Plot) error {
 		var err error
-		h, err = p.Harvest(s.now())
-		return err
+		if h, err = p.Harvest(s.now()); err != nil {
+			return err
+		}
+		return r.Inventory().Add(ctx, owner, inventory.Produce(h.Crop), h.Quantity)
 	})
 	if err != nil {
 		return nil, farm.Harvest{}, err

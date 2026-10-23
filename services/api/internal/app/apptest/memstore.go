@@ -87,6 +87,13 @@ func (s *Store) Quantity(owner player.ID, item inventory.Item) int {
 	return s.items[owner][item]
 }
 
+// Give puts items straight into the player's inventory.
+func (s *Store) Give(owner player.ID, item inventory.Item, qty int) error {
+	return s.Do(context.Background(), func(r app.Repos) error {
+		return r.Inventory().Add(context.Background(), owner, item, qty)
+	})
+}
+
 func (s *Store) nextID(prefix string) string {
 	s.seq++
 	return fmt.Sprintf("%s-%d", prefix, s.seq)

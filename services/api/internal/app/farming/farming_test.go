@@ -8,6 +8,7 @@ import (
 	"github.com/rhs96/cantinho-do-pomar/services/api/internal/app/apptest"
 	"github.com/rhs96/cantinho-do-pomar/services/api/internal/catalog"
 	"github.com/rhs96/cantinho-do-pomar/services/api/internal/domain/farm"
+	"github.com/rhs96/cantinho-do-pomar/services/api/internal/domain/inventory"
 	"github.com/rhs96/cantinho-do-pomar/services/api/internal/domain/player"
 )
 
@@ -26,6 +27,11 @@ func newFixture(t *testing.T) *fixture {
 	}
 	guest, _ := player.NewGuest("Ana", f.now)
 	f.owner = f.store.AddPlayer(guest).ID
+	for _, c := range []farm.CropID{"strawberry", "tomato"} {
+		if err := f.store.Give(f.owner, inventory.Seed(c), 2); err != nil {
+			t.Fatalf("give seeds: %v", err)
+		}
+	}
 	f.svc = NewService(f.store, catalog.Default(), func() time.Time { return f.now })
 	if _, err := f.svc.Farm(t.Context(), f.owner); err != nil {
 		t.Fatalf("Farm() = %v", err)
@@ -79,6 +85,44 @@ func TestFullCycle(t *testing.T) {
 	}
 	if p.State() != farm.PlotWithered {
 		t.Errorf("state = %v, want withered", p.State())
+	}
+
+	if got := f.store.Quantity(f.owner, inventory.Seed("strawberry")); got != 1 {
+		t.Errorf("seeds left = %d, want 1", got)
+	}
+	if got := f.store.Quantity(f.owner, inventory.Produce("strawberry")); got != strawberry.Yield {
+		t.Errorf("produce in barn = %d, want %d", got, strawberry.Yield)
+	}
+}
+
+func TestPlantWithoutSeeds(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	pos := farm.Position{}
+	_, _ = f.svc.Plow(ctx, f.owner, pos)
+
+	if _, err := f.svc.Plant(ctx, f.owner, pos, "corn"); !errors.Is(err, ErrNoSeeds) {
+		t.Fatalf("Plant() = %v, want ErrNoSeeds", err)
+	}
+
+	got, _ := f.svc.Farm(ctx, f.owner)
+	if p, _ := got.Plot(pos); p.State() != farm.PlotPlowed {
+		t.Errorf("state = %v, want plowed after a failed plant", p.State())
+	}
+}
+
+func TestPlantOnOccupiedPlotKeepsSeed(t *testing.T) {
+	f := newFixture(t)
+	ctx := t.Context()
+	pos := farm.Position{}
+	_, _ = f.svc.Plow(ctx, f.owner, pos)
+	_, _ = f.svc.Plant(ctx, f.owner, pos, "tomato")
+
+	if _, err := f.svc.Plant(ctx, f.owner, pos, "tomato"); !errors.Is(err, farm.ErrPlotOccupied) {
+		t.Fatalf("Plant() = %v, want ErrPlotOccupied", err)
+	}
+	if got := f.store.Quantity(f.owner, inventory.Seed("tomato")); got != 1 {
+		t.Errorf("seeds = %d, want 1", got)
 	}
 }
 
