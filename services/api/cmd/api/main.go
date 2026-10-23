@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/rhs96/cantinho-do-pomar/services/api/internal/adapters/httpapi"
+	"github.com/rhs96/cantinho-do-pomar/services/api/internal/adapters/pgstore"
+	"github.com/rhs96/cantinho-do-pomar/services/api/internal/app/auth"
 	"github.com/rhs96/cantinho-do-pomar/services/api/internal/config"
 	"github.com/rhs96/cantinho-do-pomar/services/api/internal/platform/postgres"
 )
@@ -46,9 +48,21 @@ func run() error {
 		}
 	}
 
+	authSvc := auth.NewService(pgstore.NewPlayers(db), pgstore.NewSessions(db), time.Now, cfg.SessionTTL)
+
+	router := httpapi.NewRouter(httpapi.Deps{
+		Logger: logger,
+		DB:     db,
+		Auth:   authSvc,
+		Session: httpapi.SessionConfig{
+			TTL:          cfg.SessionTTL,
+			SecureCookie: cfg.CookieSecure,
+		},
+	})
+
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           httpapi.NewRouter(httpapi.Deps{Logger: logger, DB: db}),
+		Handler:           router,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
