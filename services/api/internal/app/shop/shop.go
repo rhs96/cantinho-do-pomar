@@ -16,6 +16,7 @@ const MaxQuantity = 99
 var (
 	ErrUnknownCrop     = errors.New("unknown crop")
 	ErrInvalidQuantity = errors.New("quantity must be between 1 and 99")
+	ErrCropLocked      = errors.New("player level too low for this crop")
 )
 
 // Result is the player's wallet and barn after a trade.
@@ -54,6 +55,9 @@ func (s *Service) BuySeeds(ctx context.Context, owner player.ID, crop farm.CropI
 	}
 
 	return s.trade(ctx, owner, func(r app.Repos, p *player.Player) error {
+		if p.Level() < entry.MinLevel {
+			return ErrCropLocked
+		}
 		if err := p.Spend(entry.SeedPrice * int64(qty)); err != nil {
 			return err
 		}

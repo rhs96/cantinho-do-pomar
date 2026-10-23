@@ -100,3 +100,20 @@ func seedProduce(t *testing.T, store *apptest.Store, owner player.ID, crop strin
 		t.Fatalf("give produce: %v", err)
 	}
 }
+
+func TestBuyLockedSeeds(t *testing.T) {
+	svc, store, owner := newShop(t, 10_000)
+	corn, _ := catalog.Default().Entry("corn")
+
+	if _, err := svc.BuySeeds(t.Context(), owner, corn.ID, 1); !errors.Is(err, ErrCropLocked) {
+		t.Fatalf("BuySeeds() at level 1 = %v, want ErrCropLocked", err)
+	}
+
+	p := store.Player(owner)
+	p.XP = player.XPForLevel(corn.MinLevel)
+	store.SetPlayer(p)
+
+	if _, err := svc.BuySeeds(t.Context(), owner, corn.ID, 1); err != nil {
+		t.Errorf("BuySeeds() at level %d = %v", corn.MinLevel, err)
+	}
+}

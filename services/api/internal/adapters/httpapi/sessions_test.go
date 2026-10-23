@@ -153,3 +153,10 @@ func TestMeAuthBackendError(t *testing.T) {
 		t.Errorf("status = %d, want 500", rec.Code)
 	}
 }
+
+func TestPlayerResponseLevels(t *testing.T) {
+	got := toPlayerResponse(player.Player{XP: 160})
+	if got.Level != 3 || got.LevelXP != 150 || got.NextLevelXP != 300 {
+		t.Errorf("toPlayerResponse() = %+v", got)
+	}
+}
