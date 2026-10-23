@@ -19,6 +19,8 @@ type Deps struct {
 	DB      Pinger
 	Auth    Authenticator
 	Session SessionConfig
+	Farming Farming
+	Now     func() time.Time
 }
 
 func NewRouter(d Deps) http.Handler {
@@ -31,7 +33,12 @@ func NewRouter(d Deps) http.Handler {
 	r.Get("/healthz", healthz)
 	r.Get("/readyz", readyz(d.DB))
 
+	if d.Now == nil {
+		d.Now = time.Now
+	}
+
 	sessions := &sessionHandlers{auth: d.Auth, cfg: d.Session, logger: d.Logger}
+	farms := &farmHandlers{farming: d.Farming, now: d.Now, logger: d.Logger}
 
 	r.Route("/v1", func(r chi.Router) {
 		r.Post("/sessions/guest", sessions.startGuest)
@@ -39,6 +46,7 @@ func NewRouter(d Deps) http.Handler {
 		r.Group(func(r chi.Router) {
 			r.Use(requireSession(d.Auth, d.Logger))
 			r.Get("/me", sessions.me)
+			farms.routes(r)
 		})
 	})
 

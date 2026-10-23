@@ -14,6 +14,8 @@ import (
 	"github.com/rhs96/cantinho-do-pomar/services/api/internal/adapters/httpapi"
 	"github.com/rhs96/cantinho-do-pomar/services/api/internal/adapters/pgstore"
 	"github.com/rhs96/cantinho-do-pomar/services/api/internal/app/auth"
+	"github.com/rhs96/cantinho-do-pomar/services/api/internal/app/farming"
+	"github.com/rhs96/cantinho-do-pomar/services/api/internal/catalog"
 	"github.com/rhs96/cantinho-do-pomar/services/api/internal/config"
 	"github.com/rhs96/cantinho-do-pomar/services/api/internal/platform/postgres"
 )
@@ -48,12 +50,16 @@ func run() error {
 		}
 	}
 
+	crops := catalog.Default()
 	authSvc := auth.NewService(pgstore.NewPlayers(db), pgstore.NewSessions(db), time.Now, cfg.SessionTTL)
+	farmingSvc := farming.NewService(pgstore.NewFarms(db, crops), crops, time.Now)
 
 	router := httpapi.NewRouter(httpapi.Deps{
-		Logger: logger,
-		DB:     db,
-		Auth:   authSvc,
+		Logger:  logger,
+		DB:      db,
+		Auth:    authSvc,
+		Farming: farmingSvc,
+		Now:     time.Now,
 		Session: httpapi.SessionConfig{
 			TTL:          cfg.SessionTTL,
 			SecureCookie: cfg.CookieSecure,

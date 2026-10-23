@@ -113,6 +113,11 @@ func (p *Plot) IsWet(now time.Time) bool {
 	return p.state == PlotPlanted && now.Before(p.wetUntil)
 }
 
+// WetUntil is when the last watering dries out. Zero if never watered.
+func (p *Plot) WetUntil() time.Time {
+	return p.wetUntil
+}
+
 func (p *Plot) Stage(now time.Time) (Stage, error) {
 	if p.state != PlotPlanted {
 		return 0, ErrNothingPlanted
