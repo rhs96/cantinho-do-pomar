@@ -1,64 +1,20 @@
-package postgres
+package postgres_test
 
 import (
-	"context"
-	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"testing"
-	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rhs96/cantinho-do-pomar/services/api/internal/platform/postgres"
+	"github.com/rhs96/cantinho-do-pomar/services/api/internal/platform/postgres/pgtest"
 )
 
-// newTestDB creates an empty database for the test and drops it afterwards.
-// Set TEST_DATABASE_URL to a server where the user can create databases.
-func newTestDB(t *testing.T) *pgxpool.Pool {
-	t.Helper()
-
-	url := os.Getenv("TEST_DATABASE_URL")
-	if url == "" {
-		t.Skip("TEST_DATABASE_URL not set")
-	}
-
-	ctx := t.Context()
-	admin, err := pgx.Connect(ctx, url)
-	if err != nil {
-		t.Fatalf("connect: %v", err)
-	}
-	t.Cleanup(func() { _ = admin.Close(context.Background()) })
-
-	name := fmt.Sprintf("test_%d", time.Now().UnixNano())
-	if _, err := admin.Exec(ctx, "CREATE DATABASE "+name); err != nil {
-		t.Fatalf("create database: %v", err)
-	}
-
-	cfg, err := pgxpool.ParseConfig(url)
-	if err != nil {
-		t.Fatalf("parse url: %v", err)
-	}
-	cfg.ConnConfig.Database = name
-
-	pool, err := pgxpool.NewWithConfig(ctx, cfg)
-	if err != nil {
-		t.Fatalf("open pool: %v", err)
-	}
-	t.Cleanup(func() {
-		pool.Close()
-		_, _ = admin.Exec(context.Background(), "DROP DATABASE IF EXISTS "+name+" WITH (FORCE)")
-	})
-
-	return pool
-}
-
 func TestMigrateUpDownUp(t *testing.T) {
-	pool := newTestDB(t)
+	pool := pgtest.NewDB(t)
 	ctx := t.Context()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	if err := Migrate(ctx, pool, logger); err != nil {
+	if err := postgres.Migrate(ctx, pool, logger); err != nil {
 		t.Fatalf("Migrate() = %v", err)
 	}
 	for _, table := range []string{"players", "farms", "plots"} {
@@ -69,27 +25,17 @@ func TestMigrateUpDownUp(t *testing.T) {
 		}
 	}
 
-	m, closeDB, err := newMigrator(pool)
-	if err != nil {
-		t.Fatalf("newMigrator() = %v", err)
+	if err := postgres.MigrateDownTo(ctx, pool, 0); err != nil {
+		t.Fatalf("MigrateDownTo(0) = %v", err)
 	}
-	defer func() { _ = closeDB() }()
-
-	if _, err := m.DownTo(ctx, 0); err != nil {
-		t.Fatalf("DownTo(0) = %v", err)
-	}
-	if err := Migrate(ctx, pool, logger); err != nil {
+	if err := postgres.Migrate(ctx, pool, logger); err != nil {
 		t.Fatalf("Migrate() after rollback = %v", err)
 	}
 }
 
 func TestPlotConstraints(t *testing.T) {
-	pool := newTestDB(t)
+	pool := pgtest.NewMigratedDB(t)
 	ctx := t.Context()
-
-	if err := Migrate(ctx, pool, slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
-		t.Fatalf("Migrate() = %v", err)
-	}
 
 	var farmID string
 	err := pool.QueryRow(ctx, `
