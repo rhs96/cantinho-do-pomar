@@ -27,6 +27,12 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.MigrateOnStart {
 		t.Error("MigrateOnStart should default to false")
 	}
+	if !cfg.CookieSecure {
+		t.Error("CookieSecure should default to true")
+	}
+	if cfg.SessionTTL != 90*24*time.Hour {
+		t.Errorf("SessionTTL = %v, want 90 days", cfg.SessionTTL)
+	}
 }
 
 func TestLoadOverrides(t *testing.T) {
@@ -35,6 +41,8 @@ func TestLoadOverrides(t *testing.T) {
 	t.Setenv("API_LOG_LEVEL", "debug")
 	t.Setenv("API_SHUTDOWN_TIMEOUT", "3s")
 	t.Setenv("API_MIGRATE_ON_START", "true")
+	t.Setenv("API_COOKIE_SECURE", "false")
+	t.Setenv("API_SESSION_TTL", "1h")
 
 	cfg, err := Load()
 	if err != nil {
@@ -51,6 +59,12 @@ func TestLoadOverrides(t *testing.T) {
 	}
 	if !cfg.MigrateOnStart {
 		t.Error("MigrateOnStart = false, want true")
+	}
+	if cfg.CookieSecure {
+		t.Error("CookieSecure = true, want false")
+	}
+	if cfg.SessionTTL != time.Hour {
+		t.Errorf("SessionTTL = %v, want 1h", cfg.SessionTTL)
 	}
 }
 
